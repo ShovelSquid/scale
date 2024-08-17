@@ -32,8 +32,9 @@ function Player:new(x, y, z)
             x = 0,          -- change in x position
             y = 0,          -- change in y position
             z = 0,          -- change in z position
-            max_x = 50,
-            max_y = 50,
+            max_x = 150,
+            max_y = 150,
+            max_z = 150,
             fall_damage_threshold = 10,
             jump_force = 3,
             ground_jump = true,
@@ -45,11 +46,16 @@ function Player:new(x, y, z)
             y = 0,          -- change in y velocity
             z = 0,          -- change in z velocity
             gravity = -9.8,  -- change to apply in z velocity
-            move = 50,       -- change to apply to velocity
+            move = 60,       -- change to apply to velocity
             apply = 1,      -- apply change in acceleration every amt of seconds
             direction = {
                 x = 0,
                 y = 0,
+            },
+            drag = {
+                x = 0,
+                y = 0,
+                z = 0,
             },
         },
         health = {
@@ -103,6 +109,7 @@ function Player:move(dt)
     self.position.x = self.position.x + self.velocity.x * dt
     self.position.y = self.position.y + self.velocity.y * dt
     self.position.z = self.position.z + self.velocity.z * dt
+    self:drag(dt)
 end
 
 function Player:setInput(key, value)
@@ -232,6 +239,18 @@ function Player:canJump()
     return false
 end
 
+function Player:drag(dt)
+    self.velocity.x = self.velocity.x - self.velocity.x * self.acceleration.drag.x * dt
+    self.velocity.y = self.velocity.y - self.velocity.y * self.acceleration.drag.y * dt
+    self.velocity.z = self.velocity.z - self.velocity.z * self.acceleration.drag.z * dt
+    self.acceleration.drag.x = math.abs(self.velocity.x)/self.velocity.max_x
+    self.acceleration.drag.y = math.abs(self.velocity.y)/self.velocity.max_y
+    self.acceleration.drag.z = math.abs(self.velocity.z)/self.velocity.max_z
+    -- if self.velocity.x <= 0.0001 then self.velocity.x = 0 end
+    -- if self.velocity.y <= 0.0001 then self.velocity.y = 0 end
+    -- if self.velocity.z <= 0.0001 then self.velocity.z = 0 end
+end
+
 Healthbar = {}
 function Healthbar:new(x1, y1, x2, y2, segments, units)
     h = {
@@ -275,9 +294,13 @@ function love.draw()
     acceleration = [[acceleration:   x: ]]..player.acceleration.x..[[
     y: ]]..player.acceleration.y..[[
     z: ]]..player.acceleration.z
+    drag = [[drag:   x: ]]..player.acceleration.drag.x..[[
+    y: ]]..player.acceleration.drag.y..[[
+    z: ]]..player.acceleration.drag.z
     love.graphics.print(position, 20, 20)
     love.graphics.print(velocity, 20, 40)
     love.graphics.print(acceleration, 20, 60)
+    love.graphics.print(drag, 20, 80)
 end
 
 function love.keypressed(key, scancode, isrepeat)
