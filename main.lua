@@ -23,7 +23,7 @@ function Platform:draw()
     love.graphics.push()
     love.graphics.translate(self.x, self.y)
     love.graphics.setColor(self.color.r, self.color.g, self.color.b, self.color.a)
-    love.graphics.circle("fill", 0, 0, self.r - (player.position.z - self.z))
+    love.graphics.circle("fill", player.position.z - self.z * player.position.x, player.position.z - self.z * player.position.y, self.r - (player.position.z - self.z))
     love.graphics.pop()
 end
 
@@ -45,7 +45,7 @@ function Platform:inPlatform(entity)
 end
 
 function Platform:onPlatform(entity)
-    if self:inPlatform(entity) and entity.position.z <= self.z then
+    if self:inPlatform(entity) and entity.position.z <= self.z and entity.position.z > self.z - 5 then
         entity:hitGround(self)
         return true
     end
@@ -69,18 +69,19 @@ function Player:new(x, y, z)
             z = 0,          -- change in z position
             max_x = 150,
             max_y = 150,
-            max_z = 150,
+            max_z = 100000000000,
             fall_damage_threshold = 10,
-            jump_force = 3,
+            ground_jump_force = 30,
+            air_jump_force = 5,
             ground_jump = true,
             jumps = 1,
-            max_jumps = 1,
+            max_jumps = 4,
         },
         acceleration = {
             x = 0,          -- change in x velocity
             y = 0,          -- change in y velocity
             z = 0,          -- change in z velocity
-            gravity = -9.8,  -- change to apply in z velocity
+            gravity = -20,  -- change to apply in z velocity
             move = 60,       -- change to apply to velocity
             apply = 1,      -- apply change in acceleration every amt of seconds
             direction = {
@@ -119,7 +120,13 @@ function Player:new(x, y, z)
             right = false,
             down = false,
             jump = false,
-        }
+        },
+        color = {
+            r = 1,
+            g = 0.5,
+            b = 0,
+            a = 0.75,
+        },
     }
     setmetatable(p, self)
     self.__index = self
@@ -130,7 +137,7 @@ function Player:draw()
     love.graphics.push()
     love.graphics.translate(self.position.x, self.position.y)
     love.graphics.scale(2)
-    love.graphics.setColor(1, 0.5, 0, 1)
+    love.graphics.setColor(self.color.r, self.color.g, self.color.b, self.color.a)
     love.graphics.circle("fill", 0, 0, 20)
     love.graphics.pop()
 end
@@ -260,10 +267,16 @@ function Player:jumpAction()
 end
 
 function Player:jump()
+    jump_force = self.velocity.ground_jump_force
     if self.position.onGround and not self.velocity.ground_jump or not self.position.onGround then
         self.velocity.jumps = self.velocity.jumps - 1
+        jump_force = self.velocity.air_jump_force
     end
-    self.velocity.z = self.velocity.jump_force
+    if self.velocity.z < 0 then
+        self.velocity.z = jump_force
+    else
+        self.velocity.z = self.velocity.z + jump_force
+    end
     self.input.jump = false
     self:falling()
 end
@@ -312,8 +325,8 @@ mousePos = {
     x = 0,
     y = 0,
 }
-player = Player:new(width/2, height/2, 0)
-platform = Platform:new(width/2, height/2, 0, 50)
+player = Player:new(0, 0, 0)
+platform = Platform:new(0, 0, 0, 50)
 function love.update(dt)
     mousePos.x, mousePos.y = love.mouse.getPosition()
     player:move(dt)
@@ -322,12 +335,17 @@ end
 
 function love.draw()
     love.graphics.clear(1,1,0, 1)
-    love.graphics.setColor(love.math.random(70, 90)/100, love.math.random(80, 100)/100, love.math.random(30, 40)/100, love.math.random(20, 100)/100)
-    love.graphics.ellipse("fill", mousePos.x, mousePos.y, love.math.random(500, 600)/100, love.math.random(500, 600)/100)
+    -- draw world centered around player
+    love.graphics.push()
+    love.graphics.translate(-player.position.x+width/2, -player.position.y+width/2)
     platform:draw()
     player:draw()
-
-    -- text
+    love.graphics.pop()
+    -- draw cursor
+    love.graphics.setColor(love.math.random(70, 90)/100, love.math.random(80, 100)/100, love.math.random(30, 40)/100, love.math.random(20, 100)/100)
+    love.graphics.ellipse("fill", mousePos.x, mousePos.y, love.math.random(500, 600)/100, love.math.random(500, 600)/100)
+    love.graphics.setColor(0.6, 0.2, 0, 1)
+    -- draw text
     position = [[position:   x: ]]..player.position.x..[[
     y: ]]..player.position.y..[[
     z: ]]..player.position.z
@@ -340,12 +358,14 @@ function love.draw()
     drag = [[drag:   x: ]]..player.acceleration.drag.x..[[
     y: ]]..player.acceleration.drag.y..[[
     z: ]]..player.acceleration.drag.z
-    onGround = "on ground: ", player.position.onGround
+    onGround = "on ground: ".. tostring(player.position.onGround)
+    jumps = "jumps: "..player.velocity.jumps
     love.graphics.print(position, 20, 20)
     love.graphics.print(velocity, 20, 40)
     love.graphics.print(acceleration, 20, 60)
     love.graphics.print(drag, 20, 80)
     love.graphics.print(onGround, 20, 100)
+    love.graphics.print(jumps, 20, 120)
 end
 
 function love.keypressed(key, scancode, isrepeat)
