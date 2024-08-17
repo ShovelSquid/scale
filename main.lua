@@ -1,20 +1,55 @@
 -- gonna be making some recursive shi
 Platform = {}
-function Platform:new(x, y, z, r)
+function Platform:new(x, y, z, r, player)
     p = {
         x = x,
         y = y,
         z = z,
         r = r,
+        color = {
+            r = 1,
+            g = 0.2,
+            b = 0,
+            a = 1,
+        },
+        player = player,
     }
     setmetatable(p, self)
     self.__index = self
     return p
 end
 
+function Platform:draw()
+    love.graphics.push()
+    love.graphics.translate(self.x, self.y)
+    love.graphics.setColor(self.color.r, self.color.g, self.color.b, self.color.a)
+    love.graphics.circle("fill", 0, 0, self.r - (player.position.z - self.z))
+    love.graphics.pop()
+end
+
 function Platform:branch()
     -- get the next recursive things
 
+end
+
+-- check if player (or any other entity) is in the platform if their z is close
+function Platform:inPlatform(entity)
+    if entity.position.x < self.x + self.r and
+       entity.position.x > self.x - self.r and
+       entity.position.y < self.y + self.r and
+       entity.position.y > self.y - self.r then
+        return true
+    else
+        return false
+    end
+end
+
+function Platform:onPlatform(entity)
+    if self:inPlatform(entity) and entity.position.z <= self.z then
+        entity:hitGround(self)
+        return true
+    end
+    return false
 end
 
 
@@ -193,11 +228,14 @@ function Player:falling()
     self.position.onGround = false
 end
 
-function Player:hitGround()
+function Player:hitGround(platform)
     if self.velocity.z >= self.velocity.fall_damage_threshold then
         self:takeDamage(math.floor(self.velocity.z/self.velocity.fall_damage_threshold))
     end
     self.position.onGround = true
+    self.acceleration.z = 0
+    self.velocity.z = 0
+    self.position.z = platform.z
     self.velocity.jumps = self.velocity.max_jumps
 end
 
@@ -269,22 +307,27 @@ end
 
 
 
-
+width, height = love.graphics.getDimensions()
 mousePos = {
     x = 0,
     y = 0,
 }
-player = Player:new(0, 0, 0)
+player = Player:new(width/2, height/2, 0)
+platform = Platform:new(width/2, height/2, 0, 50)
 function love.update(dt)
     mousePos.x, mousePos.y = love.mouse.getPosition()
     player:move(dt)
+    platform:onPlatform(player)
 end
 
 function love.draw()
     love.graphics.clear(1,1,0, 1)
     love.graphics.setColor(love.math.random(70, 90)/100, love.math.random(80, 100)/100, love.math.random(30, 40)/100, love.math.random(20, 100)/100)
     love.graphics.ellipse("fill", mousePos.x, mousePos.y, love.math.random(500, 600)/100, love.math.random(500, 600)/100)
+    platform:draw()
     player:draw()
+
+    -- text
     position = [[position:   x: ]]..player.position.x..[[
     y: ]]..player.position.y..[[
     z: ]]..player.position.z
@@ -297,10 +340,12 @@ function love.draw()
     drag = [[drag:   x: ]]..player.acceleration.drag.x..[[
     y: ]]..player.acceleration.drag.y..[[
     z: ]]..player.acceleration.drag.z
+    onGround = "on ground: ", player.position.onGround
     love.graphics.print(position, 20, 20)
     love.graphics.print(velocity, 20, 40)
     love.graphics.print(acceleration, 20, 60)
     love.graphics.print(drag, 20, 80)
+    love.graphics.print(onGround, 20, 100)
 end
 
 function love.keypressed(key, scancode, isrepeat)
