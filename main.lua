@@ -7,23 +7,60 @@ function Platform:new(x, y, z, r, player)
         z = z,
         r = r,
         color = {
-            r = 1,
-            g = 0.2,
-            b = 0,
+            r = math.random(80, 100)/100,
+            g = math.random(0, 40)/100,
+            b = math.random(0, 20)/100,
             a = 1,
         },
         player = player,
+        depth = 0,
+        depth_factor = 0.01,
     }
     setmetatable(p, self)
     self.__index = self
     return p
 end
 
+-- function Platform:update()
+--     platform:onPlatform(player)
+-- end
+
+-- get vector from entity/player to platform
+function Platform:getVector(entity)
+    vector = {x = 0, y = 0, z = 0}
+    vector.x = entity.position.x - self.x
+    vector.y = entity.position.y - self.y
+    vector.z = entity.position.z - self.z
+    self.depth = 1/(1+self.depth_factor*vector.z)
+    magnitude = math.sqrt(vector.x^2, vector.y^2, vector.z^2)
+    direction = {x = vector.x/magnitude, y = vector.y/magnitude, z = vector.z/magnitude}
+    return vector, magnitude, direction
+end
+
+-- not platform specific
+-- want to have a radius value, and a minimum radius value for a z distance
+-- at that z distance, the radius is that minimum
+-- everywhere in between, get the in between
+-- at z = 0, radius = base
+-- at z = distance, radius = min
+function z_damp(min, z)
+    return -min*math.atan(0.1*z)
+end
+
 function Platform:draw()
+    if self.z >= player.position.z + player.position.max_z_view_distance then
+        return
+    end
+    vector, magnitude, direction = self:getVector(player)
     love.graphics.push()
-    love.graphics.translate(self.x, self.y)
+    love.graphics.translate(self.x * self.depth, self.y * self.depth)
     love.graphics.setColor(self.color.r, self.color.g, self.color.b, self.color.a)
-    love.graphics.circle("fill", player.position.z - self.z * player.position.x, player.position.z - self.z * player.position.y, self.r - (player.position.z - self.z))
+    -- love.graphics.circle("fill", player.position.z - self.z * player.position.x, player.position.z - self.z * player.position.y, self.r - (player.position.z - self.z))
+    love.graphics.circle("fill", 0, 0, self.r + z_damp(30, vector.z))
+    if self:inPlatform(player) then
+        love.graphics.setColor(0, 0, 0, 1)
+        love.graphics.print("In!", 50, -20)
+    end
     love.graphics.pop()
 end
 
@@ -62,6 +99,7 @@ function Player:new(x, y, z)
             y = y,          -- y position
             z = z,          -- 0 when on ground; gets lower and lower as time goes on
             onGround = true,
+            max_z_view_distance = 120,
         },
         velocity = {
             x = 0,          -- change in x position
@@ -70,9 +108,9 @@ function Player:new(x, y, z)
             max_x = 150,
             max_y = 150,
             max_z = 100000000000,
-            fall_damage_threshold = 10,
+            fall_damage_threshold = 30,
             ground_jump_force = 30,
-            air_jump_force = 5,
+            air_jump_force = 15,
             ground_jump = true,
             jumps = 1,
             max_jumps = 4,
@@ -202,7 +240,7 @@ function Player:getUnitVector()
     if self.input.right then table.insert(vectors, {x = 1, y = 0}) end
     if self.input.down then table.insert(vectors, {x = 0, y = 1}) end
     if #vectors < 1 then
-        return nil
+        return {x = 0, y = 0}
     end
 
     -- else, evaluate the unit vector
@@ -220,11 +258,11 @@ end
 function Player:changeDirection()
     -- get movement via direction as a unit vector
     direction = self:getUnitVector()
-    if direction == nil then
+    self.acceleration.direction = direction
+    if direction == {x = 0, y = 0} then
         self.acceleration.x = 0
         self.acceleration.y = 0
     else
-        self.acceleration.direction = direction
         self.acceleration.x = direction.x * self.acceleration.move
         self.acceleration.y = direction.y * self.acceleration.move
     end
@@ -236,8 +274,8 @@ function Player:falling()
 end
 
 function Player:hitGround(platform)
-    if self.velocity.z >= self.velocity.fall_damage_threshold then
-        self:takeDamage(math.floor(self.velocity.z/self.velocity.fall_damage_threshold))
+    if math.abs(self.velocity.z) >= self.velocity.fall_damage_threshold then
+        self:takeDamage(math.floor(math.abs(self.velocity.z)/self.velocity.fall_damage_threshold))
     end
     self.position.onGround = true
     self.acceleration.z = 0
@@ -249,14 +287,14 @@ end
 function Player:takeDamage(damage)
     self.health.bars = self.health.bars - damage
     -- then determine current state of being
-    if self.health.bars <= self.health.dead then
+    if self.health.bars <= self.health.states.dead then
         self.health.state = self.health.states.dead
 
-    elseif self.health.bars <= self.health.bloodied then
-        self.health.state = self.health.states.bloodied
+    -- elseif self.health.bars <= self.health.states.bloodied then
+    --     self.health.state = self.health.states.bloodied
 
-    elseif self.health.bars <= self.health.injured then
-        self.health.state = self.health.states.injured
+    -- elseif self.health.bars <= self.health.states.injured then
+    --     self.health.state = self.health.states.injured
     end
 end
 -- damage = velocity * mass
@@ -294,9 +332,19 @@ function Player:drag(dt)
     self.velocity.x = self.velocity.x - self.velocity.x * self.acceleration.drag.x * dt
     self.velocity.y = self.velocity.y - self.velocity.y * self.acceleration.drag.y * dt
     self.velocity.z = self.velocity.z - self.velocity.z * self.acceleration.drag.z * dt
-    self.acceleration.drag.x = math.abs(self.velocity.x)/self.velocity.max_x
-    self.acceleration.drag.y = math.abs(self.velocity.y)/self.velocity.max_y
-    self.acceleration.drag.z = math.abs(self.velocity.z)/self.velocity.max_z
+    -- self.acceleration.drag.z = math.abs(self.velocity.z)/self.velocity.max_z
+
+    if self.acceleration.direction.x == 0 then
+        self.acceleration.drag.x = 0.8
+    else
+        self.acceleration.drag.x = math.abs(self.velocity.x)/self.velocity.max_x
+    end
+
+    if self.acceleration.direction.y == 0 then
+        self.acceleration.drag.y = 0.8
+    else
+        self.acceleration.drag.y = math.abs(self.velocity.y)/self.velocity.max_y
+    end
     -- if self.velocity.x <= 0.0001 then self.velocity.x = 0 end
     -- if self.velocity.y <= 0.0001 then self.velocity.y = 0 end
     -- if self.velocity.z <= 0.0001 then self.velocity.z = 0 end
@@ -317,20 +365,27 @@ function Healthbar:new(x1, y1, x2, y2, segments, units)
     return h
 end
 
-
-
-
 width, height = love.graphics.getDimensions()
 mousePos = {
     x = 0,
     y = 0,
 }
 player = Player:new(0, 0, 0)
-platform = Platform:new(0, 0, 0, 50)
+platforms = {}
+platform = Platform:new(0, 0, 0, 50, player)
+platform2 = Platform:new(145, 145, 25, 50, player)
+platform3 = Platform:new(185, -130, -50, 50, player)
+table.insert(platforms, platform)
+table.insert(platforms, platform2)
+table.insert(platforms, platform3)
+
+
 function love.update(dt)
     mousePos.x, mousePos.y = love.mouse.getPosition()
     player:move(dt)
-    platform:onPlatform(player)
+    for key, platform in pairs(platforms) do
+        platform:onPlatform(player)
+    end
 end
 
 function love.draw()
@@ -338,7 +393,9 @@ function love.draw()
     -- draw world centered around player
     love.graphics.push()
     love.graphics.translate(-player.position.x+width/2, -player.position.y+width/2)
-    platform:draw()
+    for key, platform in pairs(platforms) do
+        platform:draw()
+    end
     player:draw()
     love.graphics.pop()
     -- draw cursor
@@ -360,12 +417,14 @@ function love.draw()
     z: ]]..player.acceleration.drag.z
     onGround = "on ground: ".. tostring(player.position.onGround)
     jumps = "jumps: "..player.velocity.jumps
+    health = "health: "..player.health.bars.."    state: "..player.health.state
     love.graphics.print(position, 20, 20)
     love.graphics.print(velocity, 20, 40)
     love.graphics.print(acceleration, 20, 60)
     love.graphics.print(drag, 20, 80)
     love.graphics.print(onGround, 20, 100)
     love.graphics.print(jumps, 20, 120)
+    love.graphics.print(health, 20, 140)
 end
 
 function love.keypressed(key, scancode, isrepeat)
